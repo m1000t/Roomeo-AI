@@ -1,18 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import { HashRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import { MemoryRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Heart, 
   Menu, 
   X, 
-  LogOut,
   Bell,
   Search,
   MessageSquare,
   PlusCircle,
   User,
-  Zap
+  Zap,
+  ArrowRight
 } from 'lucide-react';
 import LandingPage from './pages/LandingPage';
 import ListingsFeed from './pages/ListingsFeed';
@@ -30,7 +30,8 @@ const Navbar = ({ session }: { session: any }) => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
 
-  if (location.pathname === '/auth' || !session) return null;
+  // Don't show navbar on Auth page
+  if (location.pathname === '/auth') return null;
 
   const items = [
     { label: 'Explore', icon: <Search size={20} />, path: '/' },
@@ -46,62 +47,45 @@ const Navbar = ({ session }: { session: any }) => {
         <Link to="/" className="flex items-center gap-3 group">
           <div className="w-11 h-11 rounded-2xl bg-rose-500 flex items-center justify-center group-hover:scale-105 transition-transform shadow-xl shadow-rose-500/20 relative overflow-hidden">
             <Zap size={22} className="text-white fill-white" />
-            <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           <span className="text-2xl font-black tracking-tighter text-white">Roomeo</span>
         </Link>
 
-        {/* Desktop Nav */}
         <div className="hidden md:flex items-center gap-2">
-          {items.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center gap-2 px-5 py-2.5 text-xs font-black uppercase tracking-widest rounded-2xl transition-all ${
-                location.pathname === item.path 
-                  ? 'bg-rose-500/10 text-rose-500' 
-                  : 'text-zinc-500 hover:text-white hover:bg-white/5'
-              }`}
+          {session ? (
+            <>
+              {items.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={`flex items-center gap-2 px-5 py-2.5 text-xs font-black uppercase tracking-widest rounded-2xl transition-all ${
+                    location.pathname === item.path 
+                      ? 'bg-rose-500/10 text-rose-500' 
+                      : 'text-zinc-500 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
+              <div className="w-px h-6 bg-white/5 mx-4" />
+              <button className="p-3 text-zinc-500 hover:text-white relative glass rounded-xl border-white/10">
+                <Bell size={18} />
+              </button>
+            </>
+          ) : (
+            <Link 
+              to="/auth" 
+              className="px-8 py-3 rounded-2xl bg-rose-500 text-white text-xs font-black uppercase tracking-widest hover:bg-rose-400 transition-all flex items-center gap-2"
             >
-              {item.label}
+              Log In <ArrowRight size={14} />
             </Link>
-          ))}
-          <div className="w-px h-6 bg-white/5 mx-4" />
-          <button className="p-3 text-zinc-500 hover:text-white relative glass rounded-xl border-white/10">
-            <Bell size={18} />
-            <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-zinc-950"></span>
-          </button>
+          )}
         </div>
 
-        {/* Mobile Menu Button */}
         <button onClick={() => setIsOpen(!isOpen)} className="md:hidden text-zinc-400 p-2 glass rounded-xl">
           {isOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </div>
-
-      {/* Mobile Nav */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="md:hidden glass absolute top-24 left-6 right-6 p-6 rounded-[32px] flex flex-col gap-3 border border-white/10 shadow-2xl z-50"
-          >
-            {items.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => setIsOpen(false)}
-                className="flex items-center gap-4 p-5 rounded-2xl hover:bg-white/5 transition-all group"
-              >
-                <span className="text-rose-500">{item.icon}</span>
-                <span className="font-black text-sm uppercase tracking-widest">{item.label}</span>
-              </Link>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </nav>
   );
 };
@@ -112,18 +96,20 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const initAuth = async () => {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      setSession(currentSession);
-      if (currentSession) await fetchProfile(currentSession.user.id);
+    // Initial session check
+    const checkSession = async () => {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      setSession(s);
+      if (s) await fetchProfile(s.user.id);
       setLoading(false);
     };
 
-    initAuth();
+    checkSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      if (newSession) fetchProfile(newSession.user.id);
+    // Listener for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      if (s) fetchProfile(s.user.id);
       else setUserProfile(null);
     });
 
@@ -132,14 +118,11 @@ const App: React.FC = () => {
 
   const fetchProfile = async (userId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-      
-      if (data) setUserProfile(data);
-      else {
+      const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+      if (data) {
+        setUserProfile(data);
+      } else {
+        // Fallback for demo if profile doesn't exist yet
         setUserProfile({ ...MOCK_USER, id: userId });
       }
     } catch (e) {
@@ -147,7 +130,14 @@ const App: React.FC = () => {
     }
   };
 
-  if (loading) return null;
+  if (loading) return (
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <Zap size={40} className="text-rose-500 animate-pulse" />
+        <p className="text-zinc-500 font-bold uppercase tracking-widest text-[10px]">Initializing Secure App State...</p>
+      </div>
+    </div>
+  );
 
   return (
     <Router>
@@ -159,14 +149,12 @@ const App: React.FC = () => {
         <main className="relative pt-20">
           <Routes>
             <Route path="/" element={session ? <ListingsFeed user={userProfile!} /> : <LandingPage />} />
-            <Route path="/auth" element={session ? <Navigate to="/" replace /> : <Auth />} />
-            <Route path="/listing/:id" element={session ? <ListingDetail user={userProfile!} /> : <Navigate to="/auth" replace />} />
-            <Route path="/create" element={session ? <CreateListing user={userProfile!} /> : <Navigate to="/auth" replace />} />
-            <Route path="/profile" element={session ? <Profile user={userProfile!} /> : <Navigate to="/auth" replace />} />
-            <Route path="/messages" element={session ? <Messages user={userProfile!} /> : <Navigate to="/auth" replace />} />
-            <Route path="/saved" element={session ? <SavedListings user={userProfile!} /> : <Navigate to="/auth" replace />} />
-            {/* Catch-all to landing/home */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/auth" element={!session ? <Auth /> : <ListingsFeed user={userProfile!} />} />
+            <Route path="/listing/:id" element={session ? <ListingDetail user={userProfile!} /> : <Auth />} />
+            <Route path="/create" element={session ? <CreateListing user={userProfile!} /> : <Auth />} />
+            <Route path="/profile" element={session ? <Profile user={userProfile!} /> : <Auth />} />
+            <Route path="/messages" element={session ? <Messages user={userProfile!} /> : <Auth />} />
+            <Route path="/saved" element={session ? <SavedListings user={userProfile!} /> : <Auth />} />
           </Routes>
         </main>
       </div>
